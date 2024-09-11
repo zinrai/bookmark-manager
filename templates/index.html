@@ -1,4 +1,3 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,17 +28,19 @@
             color: red;
             margin-bottom: 10px;
         }
+        .success {
+            color: green;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
     <h1>Bookmark Manager</h1>
 
-    {{if .error}}
-    <p class="error">{{.error}}</p>
-    {{end}}
+    <div id="message"></div>
 
     <h2>Add Bookmark</h2>
-    <form action="/bookmarks" method="POST">
+    <form id="addBookmarkForm">
         <input type="url" name="url" placeholder="Enter URL" required>
         <button type="submit">Add Bookmark</button>
     </form>
@@ -54,7 +55,7 @@
     <a href="/export" download="bookmarks.html">Export Bookmarks</a>
 
     <h2>Your Bookmarks</h2>
-    <div class="bookmarks">
+    <div id="bookmarksList" class="bookmarks">
         {{range .bookmarks}}
         <div class="bookmark">
             <a href="{{.URL}}" target="_blank">
@@ -68,5 +69,33 @@
         <p>No bookmarks yet.</p>
         {{end}}
     </div>
+
+    <script>
+    document.getElementById('addBookmarkForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        var formData = new FormData(this);
+
+        fetch('/bookmarks', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            var messageDiv = document.getElementById('message');
+            if (data.error) {
+                messageDiv.innerHTML = '<p class="error">' + data.error + '</p>';
+            } else {
+                messageDiv.innerHTML = '<p class="success">' + data.message + '</p>';
+                // ブックマークリストを更新するために、ページをリロード
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('message').innerHTML = '<p class="error">An error occurred. Please try again.</p>';
+        });
+    });
+    </script>
 </body>
 </html>

@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -16,7 +15,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 type Bookmark struct {
@@ -32,9 +31,9 @@ type NetscapeBookmark struct {
 		HTTPEquiv string `xml:"http-equiv,attr"`
 		Content   string `xml:"content,attr"`
 	} `xml:"META"`
-	TITLE   string `xml:"TITLE"`
-	H1      string `xml:"H1"`
-	DL      struct {
+	TITLE string `xml:"TITLE"`
+	H1    string `xml:"H1"`
+	DL    struct {
 		DT []struct {
 			H3 string `xml:"H3,omitempty"`
 			A  struct {
@@ -56,7 +55,7 @@ func initDB() {
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS bookmarks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		url TEXT NOT NULL,
+		url TEXT NOT NULL UNIQUE,
 		thumbnail TEXT NOT NULL
 	)`)
 	if err != nil {
@@ -80,49 +79,40 @@ func captureScreenshot(url string) ([]byte, error) {
 func addBookmark(c *gin.Context) {
 	url := c.PostForm("url")
 	if url == "" {
-		c.HTML(http.StatusBadRequest, "index.html", gin.H{"error": "URL is required"})
-		return
-	}
-
-	// URLが既に存在するかチェック
-	var existingId int
-	err := db.QueryRow("SELECT id FROM bookmarks WHERE url = ?", url).Scan(&existingId)
-	if err == nil {
-		// URLが既に存在する場合
-		c.HTML(http.StatusBadRequest, "index.html", gin.H{"error": "This URL is already bookmarked"})
-		return
-	} else if err != sql.ErrNoRows {
-		// その他のデータベースエラー
-		c.HTML(http.StatusInternalServerError, "index.html", gin.H{"error": "Failed to check for existing bookmark"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
 		return
 	}
 
 	screenshot, err := captureScreenshot(url)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "index.html", gin.H{"error": "Failed to capture screenshot"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to capture screenshot"})
 		return
 	}
 
 	result, err := db.Exec("INSERT INTO bookmarks (url, thumbnail) VALUES (?, ?)", url, "")
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "index.html", gin.H{"error": "Failed to add bookmark"})
+		if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			c.JSON(http.StatusConflict, gin.H{"error": "This URL is already bookmarked"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add bookmark"})
+		}
 		return
 	}
 
 	id, _ := result.LastInsertId()
 	thumbnailPath := filepath.Join("thumbnails", fmt.Sprintf("%d.png", id))
 	if err := os.WriteFile(thumbnailPath, screenshot, 0644); err != nil {
-		c.HTML(http.StatusInternalServerError, "index.html", gin.H{"error": "Failed to save thumbnail"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save thumbnail"})
 		return
 	}
 
 	_, err = db.Exec("UPDATE bookmarks SET thumbnail = ? WHERE id = ?", thumbnailPath, id)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "index.html", gin.H{"error": "Failed to update bookmark"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update bookmark"})
 		return
 	}
 
-	c.Redirect(http.StatusSeeOther, "/")
+	c.JSON(http.StatusOK, gin.H{"message": "Bookmark added successfully"})
 }
 
 func getBookmarks() ([]Bookmark, error) {
@@ -179,18 +169,6 @@ func importNetscapeBookmarks(c *gin.Context) {
 	for _, dt := range netscapeBookmark.DL.DT {
 		url := dt.A.HREF
 
-		// URLが既に存在するかチェック
-		var existingId int
-		err := db.QueryRow("SELECT id FROM bookmarks WHERE url = ?", url).Scan(&existingId)
-		if err == nil {
-			// URLが既に存在する場合はスキップ
-			continue
-		} else if err != sql.ErrNoRows {
-			// その他のデータベースエラー
-			log.Printf("Failed to check for existing bookmark for %s: %v", url, err)
-			continue
-		}
-
 		screenshot, err := captureScreenshot(url)
 		if err != nil {
 			log.Printf("Failed to capture screenshot for %s: %v", url, err)
@@ -199,7 +177,11 @@ func importNetscapeBookmarks(c *gin.Context) {
 
 		result, err := db.Exec("INSERT INTO bookmarks (url, thumbnail) VALUES (?, ?)", url, "")
 		if err != nil {
-			log.Printf("Failed to add bookmark for %s: %v", url, err)
+			if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+				log.Printf("URL already exists: %s", url)
+			} else {
+				log.Printf("Failed to add bookmark for %s: %v", url, err)
+			}
 			continue
 		}
 
