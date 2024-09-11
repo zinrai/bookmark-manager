@@ -1,0 +1,72 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmark Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .bookmarks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .bookmark {
+            width: 200px;
+            text-align: center;
+        }
+        .bookmark img {
+            width: 100%;
+            height: auto;
+            object-fit: cover;
+        }
+        .error {
+            color: red;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Bookmark Manager</h1>
+
+    {{if .error}}
+    <p class="error">{{.error}}</p>
+    {{end}}
+
+    <h2>Add Bookmark</h2>
+    <form action="/bookmarks" method="POST">
+        <input type="url" name="url" placeholder="Enter URL" required>
+        <button type="submit">Add Bookmark</button>
+    </form>
+
+    <h2>Import Bookmarks</h2>
+    <form action="/import" method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".html" required>
+        <button type="submit">Import Bookmarks</button>
+    </form>
+
+    <h2>Export Bookmarks</h2>
+    <a href="/export" download="bookmarks.html">Export Bookmarks</a>
+
+    <h2>Your Bookmarks</h2>
+    <div class="bookmarks">
+        {{range .bookmarks}}
+        <div class="bookmark">
+            <a href="{{.URL}}" target="_blank">
+                <img src="/{{.Thumbnail}}" alt="Thumbnail for {{.URL}}">
+            </a>
+            <form action="/bookmarks/{{.ID}}/delete" method="POST">
+                <button type="submit">Delete</button>
+            </form>
+        </div>
+        {{else}}
+        <p>No bookmarks yet.</p>
+        {{end}}
+    </div>
+</body>
+</html>
